@@ -12,12 +12,19 @@ pub const Poly = struct {
         };
     }
 
+    pub fn deinit(self: *Poly)void{
+        self.p.deinit();
+        self.clamper.deinit();
+    }
+
     fn p(allocator: std.mem.Allocator) anyerror!bint.Managed {
-        var b = try bint.Managed.initSet(allocator, 2);
-        var m = try bint.Managed.init(allocator);
-        try m.pow(&b, 130);
+        var m = try bint.Managed.initSet(allocator, 2);
+        try m.pow(&m, 130); // 2^130
+        
         var x = try bint.Managed.initSet(allocator, 5);
-        try m.sub(&m, &x);
+        defer x.deinit();
+        
+        try m.sub(&m, &x); // 2^130 - 5
         return m;
     }
 
@@ -29,15 +36,18 @@ pub const Poly = struct {
         var rr = key[0..16];
         std.mem.reverse(u8, rr);
         var r = try toInt(allocator, rr);
+        defer r.deinit();
 
         try r.bitAnd(&r, &self.clamper);
 
         var ss = key[16..32];
         std.mem.reverse(u8, ss);
         var s = try toInt(allocator, ss);
+        defer s.deinit();
 
         var acc = try bint.Managed.init(allocator);
         var tmp = try bint.Managed.init(allocator);
+        defer tmp.deinit();
 
         var m = msg;
         var nnn: [17]u8 = undefined;
@@ -50,6 +60,7 @@ pub const Poly = struct {
             nnn[e] = 0x01;
             std.mem.reverse(u8, nnn[0 .. e + 1]);
             var n = try toInt(allocator, nnn[0 .. e + 1]);
+            defer n.deinit();
 
             try acc.add(&acc, &n);
             try acc.mul(&acc, &r);
@@ -354,6 +365,8 @@ test "polly.mac" {
         defer arena.deinit();
         const allocator = arena.allocator();
 
+        // const allocator = std.testing.allocator;
+
         const p = try Poly.init(allocator);
         var msgt = tc.msg;
         var msg: []u8 = &msgt;
@@ -366,17 +379,40 @@ test "polly.mac" {
     }
 }
 
+test "polly.mac.allocator" {
+    const allocator = std.testing.allocator;
+
+    var p = try Poly.init(allocator);
+    defer p.deinit();
+
+    var key = [_]u8{
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    };
+    var msg = [_]u8{
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+    var want = [_]u8{
+        0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    var got = try p.mac(allocator, &msg, &key);
+    defer allocator.free(got);
+    try std.testing.expectEqualSlices(u8, got, &want);
+}
+
 fn toInt(allocator: std.mem.Allocator, input: []u8) anyerror!bint.Managed {
     var x = try bint.Managed.init(allocator);
-    // var base = try bint.Managed.initSet(allocator, 256);
     try x.set(0);
     for (input) |i| {
-        //  print("{}\n", .{i});
         var ii = try bint.Managed.initSet(allocator, i);
-        // try x.mul(&x, &base);
+        defer ii.deinit();
         try x.shiftLeft(&x, 8);
         try x.add(&x, &ii);
-        //  print("{}:{} {}\n", .{i, ii, x});
     }
     return x;
 }
