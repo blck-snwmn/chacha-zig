@@ -94,10 +94,14 @@ const Polly = struct {
         // std.mem.writeIntLittle(usize, buf[0..8], acc.limbs[0]);
         // std.mem.writeIntLittle(usize, buf[8..16], acc.limbs[1]);
 
-        // 1. Use @ptrCast
+        // 2. Use @ptrCast
         // var pp = @ptrCast(*[16]u8, acc.limbs[0..2]).*;
 
-        return &@bitCast([16]u8, acc.limbs[0..2].*);
+        // MAC requires 128 bits
+        // `usize` is 64 bits -> end is 2
+        // `usize` is 32 bits -> end is 4
+        const end = 128/@typeInfo(usize).Int.bits;
+        return &@bitCast([16]u8, acc.limbs[0..end].*);
     }
 };
 
