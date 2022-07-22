@@ -64,7 +64,6 @@ const Polly = struct {
         var ss = key[16..32];
         std.mem.reverse(u8, ss);
         var s = try toInt(allocator, ss);
-        print("\ns ={x}\n", .{s});
 
         var acc = try bint.Managed.init(allocator);
         var tmp = try bint.Managed.init(allocator);
@@ -82,20 +81,13 @@ const Polly = struct {
             var n = try toInt(allocator, nnn[0 .. e + 1]);
 
             try acc.add(&acc, &n);
-            print("--acc ={x}\n", .{acc});
             try acc.mul(&acc, &r);
-            print("--acc ={x}\n", .{acc});
 
             try tmp.divFloor(&acc, &acc, &self.p);
-            print("--acc ={x}\n", .{acc});
-            print("--tmp ={x}\n", .{tmp});
 
             m = m[e..];
         }
-        print("acc ={x}\n", .{acc});
         try acc.add(&acc, &s);
-        print("acc ={x}\n", .{acc});
-        print("p ={x}\n", .{self.p});
 
         // 1. Use std.mem.writeIntLittle
         // var buf: [16]u8 = undefined;
@@ -395,9 +387,6 @@ test "polly.mac" {
         var key = &keyt;
 
         var got = try p.mac(allocator, msg, key);
-
-        print("got ={x}, \nwant={x}\n======\n", .{ std.fmt.fmtSliceHexLower(got), std.fmt.fmtSliceHexLower(&tc.want) });
-
         try std.testing.expectEqualSlices(u8, got, &tc.want);
     }
 }
