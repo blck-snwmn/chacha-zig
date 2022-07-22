@@ -1,12 +1,12 @@
 const std = @import("std");
 const bint = std.math.big.int;
 
-pub const Polly = struct {
+pub const Poly = struct {
     p: bint.Managed,
     clamper: bint.Managed,
 
-    pub fn init(allocator: std.mem.Allocator) anyerror!Polly {
-        return Polly{
+    pub fn init(allocator: std.mem.Allocator) anyerror!Poly {
+        return Poly{
             .p = try p(allocator),
             .clamper = try clamper(allocator),
         };
@@ -25,7 +25,7 @@ pub const Polly = struct {
         return try bint.Managed.initSet(allocator, 0x0ffffffc0ffffffc0ffffffc0fffffff);
     }
 
-    pub fn mac(self: Polly, allocator: std.mem.Allocator, msg: []u8, key: []u8) anyerror![]u8 {
+    pub fn mac(self: Poly, allocator: std.mem.Allocator, msg: []u8, key: []u8) anyerror![]u8 {
         var rr = key[0..16];
         std.mem.reverse(u8, rr);
         var r = try toInt(allocator, rr);
@@ -354,7 +354,7 @@ test "polly.mac" {
         defer arena.deinit();
         const allocator = arena.allocator();
 
-        const p = try Polly.init(allocator);
+        const p = try Poly.init(allocator);
         var msgt = tc.msg;
         var msg: []u8 = &msgt;
 

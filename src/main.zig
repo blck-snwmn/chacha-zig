@@ -8,7 +8,7 @@ pub fn main() anyerror!void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const p = try poly.Polly.init(allocator);
+    const p = try poly.Poly.init(allocator);
     var key = [_]u8{
         0x85, 0xd6, 0xbe, 0x78,
         0x57, 0x55, 0x6d, 0x33,
