@@ -71,7 +71,7 @@ pub const Poly = struct {
         // MAC requires 128 bits
         // `usize` is 64 bits -> end is 2
         // `usize` is 32 bits -> end is 4
-        const end = 128/@typeInfo(usize).Int.bits;
+        const end = 128 / @typeInfo(usize).Int.bits;
         return &@bitCast([16]u8, acc.limbs[0..end].*);
     }
 };
