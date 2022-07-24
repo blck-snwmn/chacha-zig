@@ -69,7 +69,7 @@ const State = struct {
     }
 };
 
-fn block(key: [32]u8, nonce: [12]u8, counter: u32) [64]u8 {
+pub fn block(key: [32]u8, nonce: [12]u8, counter: u32) [64]u8 {
     // debug.print("\n", .{});
     var s = State.init(key, nonce, counter);
     // debug.print("init\t={x}\n", .{s.s});
@@ -86,7 +86,7 @@ fn block(key: [32]u8, nonce: [12]u8, counter: u32) [64]u8 {
     return @bitCast([64]u8, s.s);
 }
 
-fn encrypt(dest: []u8, plaintext: []u8, key: [32]u8, nonce: [12]u8, counter: u32) void {
+pub fn encrypt(dest: []u8, plaintext: []u8, key: [32]u8, nonce: [12]u8, counter: u32) void {
     debug.assert(dest.len == plaintext.len);
 
     var tmp: [64]u8 = undefined;

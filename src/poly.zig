@@ -1,5 +1,6 @@
 const std = @import("std");
 const bint = std.math.big.int;
+const chacha = @import("chacha.zig");
 
 pub const Poly = struct {
     p: bint.Managed,
@@ -84,6 +85,11 @@ pub const Poly = struct {
         // `usize` is 32 bits -> end is 4
         const end = 128 / @typeInfo(usize).Int.bits;
         return &@bitCast([16]u8, acc.limbs[0..end].*);
+    }
+
+    pub fn keyGen(key: [32]u8, nonce: [12]u8) [32]u8{
+       var b = chacha.block(key, nonce, 0);
+       return b[0..32].*;
     }
 };
 
