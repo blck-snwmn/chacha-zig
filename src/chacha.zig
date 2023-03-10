@@ -57,7 +57,7 @@ const State = struct {
         // while (i < l) : (i += 1) {
         //     self.s[i] += other.s[i];
         // }
-        for (self.s) |*s, i| {
+        for (self.s, 0..) |*s, i| {
             s.* +%= other.s[i];
         }
     }
@@ -102,7 +102,7 @@ pub fn encrypt(dest: []u8, plaintext: []u8, key: [32]u8, nonce: [12]u8, counter:
         var keyStream = block(key, nonce, c);
         std.mem.copy(u8, &tmp, pt[0..e]);
 
-        for (tmp) |*p, i| {
+        for (tmp, 0..) |*p, i| {
             p.* ^= keyStream[i];
         }
         std.mem.copy(u8, d[0..e], tmp[0..e]);

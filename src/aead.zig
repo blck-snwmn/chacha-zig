@@ -116,7 +116,7 @@ test "aead.encrypt" {
     };
     const allocator = std.testing.allocator;
     // const allocator = std.heap.page_allocator;
-    const dest = try allocator.alloc(u8, tc.plaintext.len+16);
+    const dest = try allocator.alloc(u8, tc.plaintext.len + 16);
     defer allocator.free(dest);
 
     try encrypt(allocator, dest, &tc.plaintext, &tc.aad, tc.key, &tc.iv, &tc.constant);

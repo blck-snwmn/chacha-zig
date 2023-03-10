@@ -13,7 +13,7 @@ pub const Poly = struct {
         };
     }
 
-    pub fn deinit(self: *Poly)void{
+    pub fn deinit(self: *Poly) void {
         self.p.deinit();
         self.clamper.deinit();
     }
@@ -21,10 +21,10 @@ pub const Poly = struct {
     fn p(allocator: std.mem.Allocator) anyerror!bint.Managed {
         var m = try bint.Managed.initSet(allocator, 2);
         try m.pow(&m, 130); // 2^130
-        
+
         var x = try bint.Managed.initSet(allocator, 5);
         defer x.deinit();
-        
+
         try m.sub(&m, &x); // 2^130 - 5
         return m;
     }
@@ -87,9 +87,9 @@ pub const Poly = struct {
         return &@bitCast([16]u8, acc.limbs[0..end].*);
     }
 
-    pub fn keyGen(key: [32]u8, nonce: [12]u8) [32]u8{
-       var b = chacha.block(key, nonce, 0);
-       return b[0..32].*;
+    pub fn keyGen(key: [32]u8, nonce: [12]u8) [32]u8 {
+        var b = chacha.block(key, nonce, 0);
+        return b[0..32].*;
     }
 };
 
