@@ -47,6 +47,7 @@ pub const Poly = struct {
         defer s.deinit();
 
         var acc = try bint.Managed.init(allocator);
+        defer acc.deinit();
         var tmp = try bint.Managed.init(allocator);
         defer tmp.deinit();
 
@@ -72,21 +73,15 @@ pub const Poly = struct {
         }
         try acc.add(&acc, &s);
 
-        // 1. Use std.mem.writeIntLittle
-        // var buf: [16]u8 = undefined;
-        // std.mem.writeIntLittle(usize, buf[0..8], acc.limbs[0]);
-        // std.mem.writeIntLittle(usize, buf[8..16], acc.limbs[1]);
-
-        // 2. Use @ptrCast
-        // var pp = @ptrCast(*[16]u8, acc.limbs[0..2]).*;
-
-        // MAC requires 128 bits
-        // `usize` is 64 bits -> end is 2
-        // `usize` is 32 bits -> end is 4
-        const end = 128 / @typeInfo(usize).int.bits;
-        const bytes: [16]u8 = @bitCast(acc.limbs[0..end].*);
         const out = try allocator.alloc(u8, 16);
-        @memcpy(out, &bytes);
+        @memset(out, 0);
+        const limbs = acc.toConst().limbs;
+        const usize_bytes = @sizeOf(usize);
+        for (limbs, 0..) |limb, i| {
+            const off = i * usize_bytes;
+            if (off >= 16) break;
+            std.mem.writeInt(usize, out[off..][0..usize_bytes], limb, .little);
+        }
         return out;
     }
 
