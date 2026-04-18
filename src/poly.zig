@@ -2,33 +2,82 @@ const std = @import("std");
 const chacha = @import("chacha.zig");
 
 pub const Poly = struct {
+    r: u128,
+    s: u128,
+    acc: u256,
+    buf: [16]u8,
+    buf_len: u8,
+
     const prime: u256 = (@as(u256, 1) << 130) - 5;
     const clamp_mask: u128 = 0x0ffffffc_0ffffffc_0ffffffc_0fffffff;
 
-    pub fn mac(msg: []const u8, key: [32]u8) [16]u8 {
-        const r: u128 = std.mem.readInt(u128, key[0..16], .little) & clamp_mask;
-        const s: u128 = std.mem.readInt(u128, key[16..32], .little);
+    pub fn init(key: [32]u8) Poly {
+        return .{
+            .r = std.mem.readInt(u128, key[0..16], .little) & clamp_mask,
+            .s = std.mem.readInt(u128, key[16..32], .little),
+            .acc = 0,
+            .buf = undefined,
+            .buf_len = 0,
+        };
+    }
 
-        var acc: u256 = 0;
-        var remaining: []const u8 = msg;
-        while (remaining.len > 0) {
-            const e: usize = @min(16, remaining.len);
-            var padded: [16]u8 = [_]u8{0} ** 16;
-            @memcpy(padded[0..e], remaining[0..e]);
-            const low = std.mem.readInt(u128, &padded, .little);
-            const shift: u8 = @intCast(e * 8);
-            const n: u256 = @as(u256, low) + (@as(u256, 1) << shift);
+    fn processFullBlock(self: *Poly, block: *const [16]u8) void {
+        const low = std.mem.readInt(u128, block, .little);
+        const n: u256 = @as(u256, low) + (@as(u256, 1) << 128);
+        self.combine(n);
+    }
 
-            const sum: u512 = @as(u512, acc) + @as(u512, n);
-            const product: u512 = sum * @as(u512, r);
-            acc = @intCast(product % @as(u512, prime));
+    fn combine(self: *Poly, n: u256) void {
+        const sum: u512 = @as(u512, self.acc) + @as(u512, n);
+        const product: u512 = sum * @as(u512, self.r);
+        self.acc = @intCast(product % @as(u512, prime));
+    }
 
-            remaining = remaining[e..];
+    pub fn update(self: *Poly, data: []const u8) void {
+        var remaining: []const u8 = data;
+
+        if (self.buf_len > 0) {
+            const need: usize = 16 - self.buf_len;
+            const take = @min(need, remaining.len);
+            @memcpy(self.buf[self.buf_len..][0..take], remaining[0..take]);
+            self.buf_len += @intCast(take);
+            remaining = remaining[take..];
+            if (self.buf_len == 16) {
+                self.processFullBlock(&self.buf);
+                self.buf_len = 0;
+            }
         }
 
-        const final_sum: u256 = acc + @as(u256, s);
+        while (remaining.len >= 16) {
+            self.processFullBlock(remaining[0..16]);
+            remaining = remaining[16..];
+        }
+
+        if (remaining.len > 0) {
+            @memcpy(self.buf[0..remaining.len], remaining);
+            self.buf_len = @intCast(remaining.len);
+        }
+    }
+
+    pub fn final(self: *Poly, out: *[16]u8) void {
+        if (self.buf_len > 0) {
+            var padded: [16]u8 = [_]u8{0} ** 16;
+            @memcpy(padded[0..self.buf_len], self.buf[0..self.buf_len]);
+            const low = std.mem.readInt(u128, &padded, .little);
+            const shift: u8 = @as(u8, self.buf_len) * 8;
+            const n: u256 = @as(u256, low) + (@as(u256, 1) << shift);
+            self.combine(n);
+        }
+
+        const result: u256 = self.acc + @as(u256, self.s);
+        std.mem.writeInt(u128, out, @truncate(result), .little);
+    }
+
+    pub fn mac(msg: []const u8, key: [32]u8) [16]u8 {
+        var p = Poly.init(key);
+        p.update(msg);
         var out: [16]u8 = undefined;
-        std.mem.writeInt(u128, &out, @truncate(final_sum), .little);
+        p.final(&out);
         return out;
     }
 

@@ -3,7 +3,7 @@ const debug = std.debug;
 const poly = @import("poly.zig");
 const chacha = @import("chacha.zig");
 
-pub fn encrypt(allocator: std.mem.Allocator, dest: []u8, plaintext: []u8, aad: []u8, key: [32]u8, iv: []u8, constant: []u8) anyerror!void {
+pub fn encrypt(dest: []u8, plaintext: []u8, aad: []const u8, key: [32]u8, iv: []const u8, constant: []const u8) void {
     debug.assert(iv.len + constant.len == 12);
 
     var nonce: [12]u8 = undefined;
@@ -11,42 +11,27 @@ pub fn encrypt(allocator: std.mem.Allocator, dest: []u8, plaintext: []u8, aad: [
     @memcpy(nonce[constant.len..], iv);
 
     const ciphertext = dest[0..plaintext.len];
-
     chacha.encrypt(ciphertext, plaintext, key, nonce, 1);
 
     const otk = poly.Poly.keyGen(key, nonce);
 
-    const macData = try constructMacData(allocator, aad, ciphertext);
-    defer allocator.free(macData);
+    var p = poly.Poly.init(otk);
+    const zeros: [16]u8 = @splat(0);
+    p.update(aad);
+    p.update(zeros[0..padLen(aad.len)]);
+    p.update(ciphertext);
+    p.update(zeros[0..padLen(ciphertext.len)]);
 
-    const tag = poly.Poly.mac(macData, otk);
-    @memcpy(dest[plaintext.len..], &tag);
+    var footer: [16]u8 = undefined;
+    std.mem.writeInt(u64, footer[0..8], aad.len, .little);
+    std.mem.writeInt(u64, footer[8..16], ciphertext.len, .little);
+    p.update(&footer);
+
+    p.final(dest[plaintext.len..][0..16]);
 }
 
-fn constructMacData(allocator: std.mem.Allocator, aad: []u8, ciphertext: []u8) anyerror![]u8 {
-    const aadSize = paddedSize(aad);
-    const ciphertextSize = paddedSize(ciphertext);
-
-    // MEMO alloc と fee の場所について再考
-    const macData = try allocator.alloc(u8, aadSize + ciphertextSize + 8 + 8);
-    @memset(macData, 0);
-
-    var head = macData;
-
-    @memcpy(head[0..aad.len], aad);
-    head = head[aadSize..];
-
-    @memcpy(head[0..ciphertext.len], ciphertext);
-    head = head[ciphertextSize..];
-
-    std.mem.writeInt(u64, head[0..8], aad.len, .little);
-    head = head[8..];
-    std.mem.writeInt(u64, head[0..8], ciphertext.len, .little);
-    return macData;
-}
-
-fn paddedSize(d: []u8) usize {
-    return (d.len + 15) & ~@as(usize, 15);
+fn padLen(len: usize) usize {
+    return (16 - len % 16) % 16;
 }
 
 test "aead.encrypt" {
@@ -113,12 +98,10 @@ test "aead.encrypt" {
     defer allocator.free(dest);
 
     var plaintext = tc.plaintext;
-    var aad = tc.aad;
-    var iv = tc.iv;
-    var constant = tc.constant;
-    try encrypt(allocator, dest, &plaintext, &aad, tc.key, &iv, &constant);
-
-    debug.print("x={x}\n", .{dest});
+    const aad = tc.aad;
+    const iv = tc.iv;
+    const constant = tc.constant;
+    encrypt(dest, &plaintext, &aad, tc.key, &iv, &constant);
 
     const want = tc.want;
     try std.testing.expectEqualSlices(u8, &want, dest);
@@ -147,10 +130,7 @@ test "aead.encrypt oracle: aad 16-byte boundary" {
     const mine = try allocator.alloc(u8, plaintext_literal.len + 16);
     defer allocator.free(mine);
     var pt_copy = plaintext_literal;
-    var aad_copy = aad_literal;
-    var iv_copy = iv;
-    var constant_copy = constant;
-    try encrypt(allocator, mine, &pt_copy, &aad_copy, key, &iv_copy, &constant_copy);
+    encrypt(mine, &pt_copy, &aad_literal, key, &iv, &constant);
 
     // stdlib oracle
     var std_ct: [plaintext_literal.len]u8 = undefined;
