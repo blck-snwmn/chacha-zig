@@ -14,17 +14,13 @@ pub fn encrypt(allocator: std.mem.Allocator, dest: []u8, plaintext: []u8, aad: [
 
     chacha.encrypt(ciphertext, plaintext, key, nonce, 1);
 
-    var otk = poly.Poly.keyGen(key, nonce);
+    const otk = poly.Poly.keyGen(key, nonce);
 
     const macData = try constructMacData(allocator, aad, ciphertext);
     defer allocator.free(macData);
 
-    var ply = try poly.Poly.init(allocator);
-    defer ply.deinit();
-    const mac = try ply.mac(allocator, macData, &otk);
-    defer allocator.free(mac);
-
-    @memcpy(dest[plaintext.len..], mac);
+    const tag = poly.Poly.mac(macData, otk);
+    @memcpy(dest[plaintext.len..], &tag);
 }
 
 fn constructMacData(allocator: std.mem.Allocator, aad: []u8, ciphertext: []u8) anyerror![]u8 {

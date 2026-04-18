@@ -1,92 +1,39 @@
 const std = @import("std");
-const bint = std.math.big.int;
 const chacha = @import("chacha.zig");
 
 pub const Poly = struct {
-    p: bint.Managed,
-    clamper: bint.Managed,
+    const prime: u256 = (@as(u256, 1) << 130) - 5;
+    const clamp_mask: u128 = 0x0ffffffc_0ffffffc_0ffffffc_0fffffff;
 
-    pub fn init(allocator: std.mem.Allocator) anyerror!Poly {
-        return Poly{
-            .p = try initPrime(allocator),
-            .clamper = try initClampMask(allocator),
-        };
-    }
+    pub fn mac(msg: []const u8, key: [32]u8) [16]u8 {
+        const r: u128 = std.mem.readInt(u128, key[0..16], .little) & clamp_mask;
+        const s: u128 = std.mem.readInt(u128, key[16..32], .little);
 
-    pub fn deinit(self: *Poly) void {
-        self.p.deinit();
-        self.clamper.deinit();
-    }
+        var acc: u256 = 0;
+        var remaining: []const u8 = msg;
+        while (remaining.len > 0) {
+            const e: usize = @min(16, remaining.len);
+            var padded: [16]u8 = [_]u8{0} ** 16;
+            @memcpy(padded[0..e], remaining[0..e]);
+            const low = std.mem.readInt(u128, &padded, .little);
+            const shift: u8 = @intCast(e * 8);
+            const n: u256 = @as(u256, low) + (@as(u256, 1) << shift);
 
-    fn initPrime(allocator: std.mem.Allocator) anyerror!bint.Managed {
-        var m = try bint.Managed.initSet(allocator, 2);
-        try m.pow(&m, 130); // 2^130
+            const sum: u512 = @as(u512, acc) + @as(u512, n);
+            const product: u512 = sum * @as(u512, r);
+            acc = @intCast(product % @as(u512, prime));
 
-        var x = try bint.Managed.initSet(allocator, 5);
-        defer x.deinit();
-
-        try m.sub(&m, &x); // 2^130 - 5
-        return m;
-    }
-
-    fn initClampMask(allocator: std.mem.Allocator) anyerror!bint.Managed {
-        return try bint.Managed.initSet(allocator, 0x0ffffffc0ffffffc0ffffffc0fffffff);
-    }
-
-    pub fn mac(self: Poly, allocator: std.mem.Allocator, msg: []u8, key: []u8) anyerror![]u8 {
-        const rr = key[0..16];
-        std.mem.reverse(u8, rr);
-        var r = try toInt(allocator, rr);
-        defer r.deinit();
-
-        try r.bitAnd(&r, &self.clamper);
-
-        const ss = key[16..32];
-        std.mem.reverse(u8, ss);
-        var s = try toInt(allocator, ss);
-        defer s.deinit();
-
-        var acc = try bint.Managed.init(allocator);
-        defer acc.deinit();
-        var tmp = try bint.Managed.init(allocator);
-        defer tmp.deinit();
-
-        var m = msg;
-        var nnn: [17]u8 = undefined;
-        while (m.len > 0) {
-            var e: usize = 16;
-            if (m.len < e) {
-                e = m.len;
-            }
-            @memcpy(nnn[0..e], m[0..e]);
-            nnn[e] = 0x01;
-            std.mem.reverse(u8, nnn[0 .. e + 1]);
-            var n = try toInt(allocator, nnn[0 .. e + 1]);
-            defer n.deinit();
-
-            try acc.add(&acc, &n);
-            try acc.mul(&acc, &r);
-
-            try tmp.divFloor(&acc, &acc, &self.p);
-
-            m = m[e..];
+            remaining = remaining[e..];
         }
-        try acc.add(&acc, &s);
 
-        const out = try allocator.alloc(u8, 16);
-        @memset(out, 0);
-        const limbs = acc.toConst().limbs;
-        const usize_bytes = @sizeOf(usize);
-        for (limbs, 0..) |limb, i| {
-            const off = i * usize_bytes;
-            if (off >= 16) break;
-            std.mem.writeInt(usize, out[off..][0..usize_bytes], limb, .little);
-        }
+        const final_sum: u256 = acc + @as(u256, s);
+        var out: [16]u8 = undefined;
+        std.mem.writeInt(u128, &out, @truncate(final_sum), .little);
         return out;
     }
 
     pub fn keyGen(key: [32]u8, nonce: [12]u8) [32]u8 {
-        var b = chacha.block(key, nonce, 0);
+        const b = chacha.block(key, nonce, 0);
         return b[0..32].*;
     }
 };
@@ -365,59 +312,9 @@ test "polly.mac" {
             },
         },
     }) |tc| {
-        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer arena.deinit();
-        const allocator = arena.allocator();
-
-        // const allocator = std.testing.allocator;
-
-        const p = try Poly.init(allocator);
-        var msgt = tc.msg;
-        const msg: []u8 = &msgt;
-
-        var keyt = tc.key;
-        const key = &keyt;
-
-        const got = try p.mac(allocator, msg, key);
+        const msg = tc.msg;
         const want = tc.want;
-        try std.testing.expectEqualSlices(u8, got, &want);
+        const got = Poly.mac(&msg, tc.key);
+        try std.testing.expectEqualSlices(u8, &want, &got);
     }
-}
-
-test "polly.mac.allocator" {
-    const allocator = std.testing.allocator;
-
-    var p = try Poly.init(allocator);
-    defer p.deinit();
-
-    var key = [_]u8{
-        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    };
-    var msg = [_]u8{
-        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    };
-    var want = [_]u8{
-        0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    };
-
-    const got = try p.mac(allocator, &msg, &key);
-    defer allocator.free(got);
-    try std.testing.expectEqualSlices(u8, got, &want);
-}
-
-fn toInt(allocator: std.mem.Allocator, input: []u8) anyerror!bint.Managed {
-    var x = try bint.Managed.init(allocator);
-    try x.set(0);
-    for (input) |i| {
-        var ii = try bint.Managed.initSet(allocator, i);
-        defer ii.deinit();
-        try x.shiftLeft(&x, 8);
-        try x.add(&x, &ii);
-    }
-    return x;
 }
