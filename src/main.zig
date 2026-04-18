@@ -3,6 +3,12 @@ const heap = std.heap;
 const debug = std.debug;
 const poly = @import("poly.zig");
 
+test {
+    _ = @import("chacha.zig");
+    _ = @import("poly.zig");
+    _ = @import("aead.zig");
+}
+
 pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -26,6 +32,6 @@ pub fn main() anyerror!void {
         0x61, 0x72, 0x63, 0x68, 0x20, 0x47, 0x72, 0x6f,
         0x75, 0x70,
     };
-    var xxxx = try p.mac(allocator, &msg, &key);
-    debug.print("reult={x}\n", .{std.fmt.fmtSliceHexLower(xxxx)});
+    const xxxx = try p.mac(allocator, &msg, &key);
+    debug.print("reult={x}\n", .{xxxx});
 }

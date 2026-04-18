@@ -8,8 +8,8 @@ pub const Poly = struct {
 
     pub fn init(allocator: std.mem.Allocator) anyerror!Poly {
         return Poly{
-            .p = try p(allocator),
-            .clamper = try clamper(allocator),
+            .p = try initPrime(allocator),
+            .clamper = try initClampMask(allocator),
         };
     }
 
@@ -18,7 +18,7 @@ pub const Poly = struct {
         self.clamper.deinit();
     }
 
-    fn p(allocator: std.mem.Allocator) anyerror!bint.Managed {
+    fn initPrime(allocator: std.mem.Allocator) anyerror!bint.Managed {
         var m = try bint.Managed.initSet(allocator, 2);
         try m.pow(&m, 130); // 2^130
 
@@ -29,19 +29,19 @@ pub const Poly = struct {
         return m;
     }
 
-    fn clamper(allocator: std.mem.Allocator) anyerror!bint.Managed {
+    fn initClampMask(allocator: std.mem.Allocator) anyerror!bint.Managed {
         return try bint.Managed.initSet(allocator, 0x0ffffffc0ffffffc0ffffffc0fffffff);
     }
 
     pub fn mac(self: Poly, allocator: std.mem.Allocator, msg: []u8, key: []u8) anyerror![]u8 {
-        var rr = key[0..16];
+        const rr = key[0..16];
         std.mem.reverse(u8, rr);
         var r = try toInt(allocator, rr);
         defer r.deinit();
 
         try r.bitAnd(&r, &self.clamper);
 
-        var ss = key[16..32];
+        const ss = key[16..32];
         std.mem.reverse(u8, ss);
         var s = try toInt(allocator, ss);
         defer s.deinit();
@@ -57,7 +57,7 @@ pub const Poly = struct {
             if (m.len < e) {
                 e = m.len;
             }
-            std.mem.copy(u8, &nnn, m[0..e]);
+            @memcpy(nnn[0..e], m[0..e]);
             nnn[e] = 0x01;
             std.mem.reverse(u8, nnn[0 .. e + 1]);
             var n = try toInt(allocator, nnn[0 .. e + 1]);
@@ -83,8 +83,11 @@ pub const Poly = struct {
         // MAC requires 128 bits
         // `usize` is 64 bits -> end is 2
         // `usize` is 32 bits -> end is 4
-        const end = 128 / @typeInfo(usize).Int.bits;
-        return &@bitCast([16]u8, acc.limbs[0..end].*);
+        const end = 128 / @typeInfo(usize).int.bits;
+        const bytes: [16]u8 = @bitCast(acc.limbs[0..end].*);
+        const out = try allocator.alloc(u8, 16);
+        @memcpy(out, &bytes);
+        return out;
     }
 
     pub fn keyGen(key: [32]u8, nonce: [12]u8) [32]u8 {
@@ -375,13 +378,14 @@ test "polly.mac" {
 
         const p = try Poly.init(allocator);
         var msgt = tc.msg;
-        var msg: []u8 = &msgt;
+        const msg: []u8 = &msgt;
 
         var keyt = tc.key;
-        var key = &keyt;
+        const key = &keyt;
 
-        var got = try p.mac(allocator, msg, key);
-        try std.testing.expectEqualSlices(u8, got, &tc.want);
+        const got = try p.mac(allocator, msg, key);
+        const want = tc.want;
+        try std.testing.expectEqualSlices(u8, got, &want);
     }
 }
 
@@ -406,7 +410,7 @@ test "polly.mac.allocator" {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     };
 
-    var got = try p.mac(allocator, &msg, &key);
+    const got = try p.mac(allocator, &msg, &key);
     defer allocator.free(got);
     try std.testing.expectEqualSlices(u8, got, &want);
 }

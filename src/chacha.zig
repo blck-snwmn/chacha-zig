@@ -11,15 +11,15 @@ const State = struct {
         s[2] = 0x79622d32;
         s[3] = 0x6b206574;
 
-        var pkey = @bitCast([8]u32, key);
+        const pkey: [8]u32 = @bitCast(key);
         // std.mem.reverse(u32, &pkey); // little endian only
-        std.mem.copy(u32, s[4..12], pkey[0..]);
+        @memcpy(s[4..12], pkey[0..]);
 
         s[12] = counter;
 
-        var pnonce = @bitCast([3]u32, nonce);
+        const pnonce: [3]u32 = @bitCast(nonce);
         // std.mem.reverse(u32, &pnonce); // little endian only
-        std.mem.copy(u32, s[13..16], pnonce[0..]);
+        @memcpy(s[13..16], pnonce[0..]);
 
         return State{ .s = s };
     }
@@ -57,14 +57,14 @@ const State = struct {
         // while (i < l) : (i += 1) {
         //     self.s[i] += other.s[i];
         // }
-        for (self.s, 0..) |*s, i| {
+        for (&self.s, 0..) |*s, i| {
             s.* +%= other.s[i];
         }
     }
 
     fn clone(self: State) State {
         var s: [16]u32 = undefined;
-        std.mem.copy(u32, s[0..], self.s[0..]);
+        @memcpy(s[0..], self.s[0..]);
         return State{ .s = s };
     }
 };
@@ -83,7 +83,7 @@ pub fn block(key: [32]u8, nonce: [12]u8, counter: u32) [64]u8 {
     // debug.print("loop\t={x}\n", .{s.s});
     s.add(init);
     // debug.print("last\t={x}\n", .{s.s});
-    return @bitCast([64]u8, s.s);
+    return @bitCast(s.s);
 }
 
 pub fn encrypt(dest: []u8, plaintext: []u8, key: [32]u8, nonce: [12]u8, counter: u32) void {
@@ -99,13 +99,13 @@ pub fn encrypt(dest: []u8, plaintext: []u8, key: [32]u8, nonce: [12]u8, counter:
         if (pt.len < e) {
             e = pt.len;
         }
-        var keyStream = block(key, nonce, c);
-        std.mem.copy(u8, &tmp, pt[0..e]);
+        const keyStream = block(key, nonce, c);
+        @memcpy(tmp[0..e], pt[0..e]);
 
-        for (tmp, 0..) |*p, i| {
+        for (&tmp, 0..) |*p, i| {
             p.* ^= keyStream[i];
         }
-        std.mem.copy(u8, d[0..e], tmp[0..e]);
+        @memcpy(d[0..e], tmp[0..e]);
 
         c += 1;
         pt = pt[e..];
@@ -115,19 +115,19 @@ pub fn encrypt(dest: []u8, plaintext: []u8, key: [32]u8, nonce: [12]u8, counter:
 
 test "chacha.state init" {
     // inline for (.{})|tc|{}
-    var key = [_]u8{
+    const key = [_]u8{
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
         0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
         0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
         0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
     };
-    var nonce = [_]u8{
+    const nonce = [_]u8{
         0x00, 0x00, 0x00, 0x09,
         0x00, 0x00, 0x00, 0x4a,
         0x00, 0x00, 0x00, 0x00,
     };
-    var s = State.init(key, nonce, 1);
-    var want = State{ .s = [_]u32{
+    const s = State.init(key, nonce, 1);
+    const want = State{ .s = [_]u32{
         0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
         0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c,
         0x13121110, 0x17161514, 0x1b1a1918, 0x1f1e1d1c,
@@ -138,8 +138,8 @@ test "chacha.state init" {
 
 test "chacha.state quarterRound" {
     // inline for (.{})|tc|{}
-    var key: [32]u8 = undefined;
-    var nonce: [12]u8 = undefined;
+    const key: [32]u8 = undefined;
+    const nonce: [12]u8 = undefined;
     var s = State.init(key, nonce, 1);
     s.s = [_]u32{
         0x879531e0, 0xc5ecf37d, 0x516461b1, 0xc9a62f8a,
@@ -187,18 +187,13 @@ test "chacha.block" {
             },
         },
     }) |tc| {
-        var got = block(tc.key, tc.nonce, tc.counter);
-
-        // debug.print("\n", .{});
-        // // debug.print("got={x}\n", .{std.fmt.fmtSliceHexLower(&got)});
-        // // debug.print("tc.want={x}\n", .{std.fmt.fmtSliceHexLower(&tc.want)});
-        // debug.print("got={any}\n", .{got});
-        // debug.print("tc.want={any}\n", .{tc.want});
-        try std.testing.expectEqualSlices(u8, &got, &tc.want);
+        const got = block(tc.key, tc.nonce, tc.counter);
+        const want = tc.want;
+        try std.testing.expectEqualSlices(u8, &got, &want);
     }
 }
 
-test "chacha.state quarterRound" {
+test "chacha.encrypt" {
     inline for (.{
         .{
             .key = [_]u8{
@@ -388,7 +383,7 @@ test "chacha.state quarterRound" {
         var plaintext = tc.plaintext;
 
         encrypt(dest, &plaintext, tc.key, tc.nonce, tc.counter);
-        // debug.print("x={x}\n", .{std.fmt.fmtSliceHexLower(dest)});
-        try std.testing.expectEqualSlices(u8, &tc.want, dest);
+        const want = tc.want;
+        try std.testing.expectEqualSlices(u8, &want, dest);
     }
 }

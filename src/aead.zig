@@ -7,45 +7,45 @@ pub fn encrypt(allocator: std.mem.Allocator, dest: []u8, plaintext: []u8, aad: [
     debug.assert(iv.len + constant.len == 12);
 
     var nonce: [12]u8 = undefined;
-    std.mem.copy(u8, nonce[0..constant.len], constant);
-    std.mem.copy(u8, nonce[constant.len..], iv);
+    @memcpy(nonce[0..constant.len], constant);
+    @memcpy(nonce[constant.len..], iv);
 
-    var ciphertext = dest[0..plaintext.len];
+    const ciphertext = dest[0..plaintext.len];
 
     chacha.encrypt(ciphertext, plaintext, key, nonce, 1);
 
     var otk = poly.Poly.keyGen(key, nonce);
 
-    var macData = try constructMacData(allocator, aad, ciphertext);
+    const macData = try constructMacData(allocator, aad, ciphertext);
     defer allocator.free(macData);
 
     var ply = try poly.Poly.init(allocator);
     defer ply.deinit();
-    var mac = try ply.mac(allocator, macData, &otk);
+    const mac = try ply.mac(allocator, macData, &otk);
     defer allocator.free(mac);
 
-    std.mem.copy(u8, dest[plaintext.len..], mac);
+    @memcpy(dest[plaintext.len..], mac);
 }
 
 fn constructMacData(allocator: std.mem.Allocator, aad: []u8, ciphertext: []u8) anyerror![]u8 {
-    var aadSize = paddedSize(aad);
-    var ciphertextSize = paddedSize(ciphertext);
+    const aadSize = paddedSize(aad);
+    const ciphertextSize = paddedSize(ciphertext);
 
     // MEMO alloc と fee の場所について再考
     const macData = try allocator.alloc(u8, aadSize + ciphertextSize + 8 + 8);
-    std.mem.set(u8, macData, 0);
+    @memset(macData, 0);
 
     var head = macData;
 
-    std.mem.copy(u8, head[0..aadSize], aad);
+    @memcpy(head[0..aad.len], aad);
     head = head[aadSize..];
 
-    std.mem.copy(u8, head[0..ciphertextSize], ciphertext);
+    @memcpy(head[0..ciphertext.len], ciphertext);
     head = head[ciphertextSize..];
 
-    std.mem.writeIntLittle(usize, head[0..8], aad.len);
+    std.mem.writeInt(u64, head[0..8], aad.len, .little);
     head = head[8..];
-    std.mem.writeIntLittle(usize, head[0..8], ciphertext.len);
+    std.mem.writeInt(u64, head[0..8], ciphertext.len, .little);
     return macData;
 }
 
@@ -58,7 +58,7 @@ fn paddedSize(d: []u8) usize {
 
 test "aead.encrypt" {
     debug.print("\n", .{});
-    var tc = .{
+    const tc = .{
         .aad = [_]u8{
             0x50, 0x51, 0x52, 0x53,
             0xc0, 0xc1, 0xc2, 0xc3,
@@ -119,9 +119,14 @@ test "aead.encrypt" {
     const dest = try allocator.alloc(u8, tc.plaintext.len + 16);
     defer allocator.free(dest);
 
-    try encrypt(allocator, dest, &tc.plaintext, &tc.aad, tc.key, &tc.iv, &tc.constant);
+    var plaintext = tc.plaintext;
+    var aad = tc.aad;
+    var iv = tc.iv;
+    var constant = tc.constant;
+    try encrypt(allocator, dest, &plaintext, &aad, tc.key, &iv, &constant);
 
-    debug.print("x={x}\n", .{std.fmt.fmtSliceHexLower(dest)});
+    debug.print("x={x}\n", .{dest});
 
-    try std.testing.expectEqualSlices(u8, &tc.want, dest);
+    const want = tc.want;
+    try std.testing.expectEqualSlices(u8, &want, dest);
 }
