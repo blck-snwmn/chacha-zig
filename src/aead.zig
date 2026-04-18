@@ -50,10 +50,7 @@ fn constructMacData(allocator: std.mem.Allocator, aad: []u8, ciphertext: []u8) a
 }
 
 fn paddedSize(d: []u8) usize {
-    if (d.len == 0) {
-        return 0;
-    }
-    return d.len + 16 - (d.len % 16);
+    return (d.len + 15) & ~@as(usize, 15);
 }
 
 test "aead.encrypt" {
@@ -129,4 +126,48 @@ test "aead.encrypt" {
 
     const want = tc.want;
     try std.testing.expectEqualSlices(u8, &want, dest);
+}
+
+test "aead.encrypt oracle: aad 16-byte boundary" {
+    const allocator = std.testing.allocator;
+
+    var key: [32]u8 = undefined;
+    for (&key, 0..) |*b, i| b.* = @intCast(i);
+
+    const constant = [_]u8{ 0x01, 0x02, 0x03, 0x04 };
+    const iv = [_]u8{ 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c };
+    var nonce: [12]u8 = undefined;
+    @memcpy(nonce[0..4], &constant);
+    @memcpy(nonce[4..12], &iv);
+
+    // aad.len == 16: padding should be 0 per RFC 8439
+    const aad_literal = [_]u8{
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+    };
+    const plaintext_literal = [_]u8{ 'H', 'e', 'l', 'l', 'o' };
+
+    // Our implementation
+    const mine = try allocator.alloc(u8, plaintext_literal.len + 16);
+    defer allocator.free(mine);
+    var pt_copy = plaintext_literal;
+    var aad_copy = aad_literal;
+    var iv_copy = iv;
+    var constant_copy = constant;
+    try encrypt(allocator, mine, &pt_copy, &aad_copy, key, &iv_copy, &constant_copy);
+
+    // stdlib oracle
+    var std_ct: [plaintext_literal.len]u8 = undefined;
+    var std_tag: [16]u8 = undefined;
+    std.crypto.aead.chacha_poly.ChaCha20Poly1305.encrypt(
+        &std_ct,
+        &std_tag,
+        &plaintext_literal,
+        &aad_literal,
+        nonce,
+        key,
+    );
+
+    try std.testing.expectEqualSlices(u8, &std_ct, mine[0..plaintext_literal.len]);
+    try std.testing.expectEqualSlices(u8, &std_tag, mine[plaintext_literal.len..]);
 }
